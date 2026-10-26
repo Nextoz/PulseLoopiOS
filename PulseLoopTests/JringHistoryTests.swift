@@ -173,10 +173,10 @@ final class JringHistoryTests: XCTestCase {
         XCTAssertEqual(temps[1].0, 36.2, accuracy: 0.001)
         XCTAssertEqual(temps[1].1.timeIntervalSince(temps[0].1), 300)
 
-        let live = utcDecoder().decodeAll(Data([0x38] + le16(3712) + le16(0)))
+        let live = utcDecoder().decodeAll(frame([0x38] + le16(3712) + le16(0)))
         guard case let .temperatureSample(celsius, _) = live[0] else { return XCTFail() }
         XCTAssertEqual(celsius, 37.12, accuracy: 0.001)
-        guard case .commandAck(commandId: 0x38) = utcDecoder().decodeAll(Data([0x38] + le16(5) + le16(7)))[0]
+        guard case .commandAck(commandId: 0x38) = utcDecoder().decodeAll(frame([0x38] + le16(5) + le16(7)))[0]
         else { return XCTFail() }
     }
 
