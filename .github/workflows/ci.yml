@@ -5,6 +5,7 @@ name: CI
 # a mocked OpenAI client (api key "sk-test"), so no secrets are required.
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
