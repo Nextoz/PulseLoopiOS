@@ -30,9 +30,9 @@ final class JringSyncEngineTests: XCTestCase {
             0x01,   // time sync (local wall clock)
             0x21,   // locale
             0x19,   // background monitoring  ← arms the ring's sensor logging
+            0x09,   // sleep-staging windows
             0x20,   // capability bitmask
-            0x10,   // activity history
-            0x16,   // measurement history
+            0x10,   // activity history, day 0 (0x16 follows once that day's stream settles)
         ])
     }
 

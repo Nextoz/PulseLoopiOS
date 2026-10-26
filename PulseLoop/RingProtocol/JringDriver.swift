@@ -34,10 +34,17 @@ final class JringDriver: WearableDriver {
     func frame(_ command: Data) -> Data { command }   // already 20 bytes, no checksum
 
     func ingest(_ data: Data, from characteristic: CBUUID) -> [RingDecodedEvent] {
-        decoder.decodeAll(data)
+        // The history pager watches raw frames (0x10/0x11/0x16) to know when a day's stream ended.
+        engine?.noteInboundFrame(data)
+        return decoder.decodeAll(data)
     }
 
+    /// The engine this driver built, so `ingest` can feed it raw frames for history paging.
+    private weak var engine: JringSyncEngine?
+
     func makeSyncEngine() -> RingSyncEngine {
-        JringSyncEngine(writer: writer, clock: clock)
+        let made = JringSyncEngine(writer: writer, clock: clock)
+        engine = made
+        return made
     }
 }

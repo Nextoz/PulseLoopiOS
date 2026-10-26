@@ -333,11 +333,28 @@ struct RingDecoder {
         if packet.commandId == 0x16, bytes.count >= 20, bytes[1] == 0xa0 {
             return decodeHistoryHeartRate(bytes)
         }
+        // 0x10 history slot: a 15-minute window of per-minute step counts.
+        if packet.commandId == 0x10 {
+            return decodeActivityHistory(bytes)
+        }
         // The 0x0c status payload carries both the embedded address and the firmware string; emit both.
         if packet.commandId == 0x0c, bytes.count >= 13 {
             return [decode(data), .firmware(version: firmwareString(bytes))]
         }
         return [decode(data)]
+    }
+
+    /// Decode a 0x10 history reply (verified on hardware): `[0]=0x10`, `[1..4]`=u32 LE start of a
+    /// 15-minute slot (ring-local wall clock), `[5..19]`=15 per-minute step counts. Only slots with
+    /// activity are sent; a final all-zero slot ends the day. The slot is emitted as one
+    /// `.activityBucket` (upserted by start time, so re-syncs and the live 0x03 total never double
+    /// count); an all-zero slot carries no steps and decodes to an ack. Per-minute detail is kept
+    /// only in the raw frame log.
+    func decodeActivityHistory(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 20 else { return [.commandAck(commandId: 0x10)] }
+        let total = bytes[5..<20].reduce(0) { $0 + Int($1) }
+        guard total > 0 else { return [.commandAck(commandId: 0x10)] }
+        return [.activityBucket(timestamp: ringDate(u32le(bytes, 1)), steps: total, distanceMeters: 0)]
     }
 
     /// Decode a 0x16 `0xA0` data block: base timestamp at [2..5] (LE u32), then two consecutive
@@ -485,8 +502,36 @@ struct RingEncoder {
     func makeStatusCommand() -> Data { data(hex: "0c00000000000000000000000000000000000000") }
     func makeLocaleCommand(locale: String = "en-US") -> Data { data(hex: "21656e2d55530000000000000000000000000000") }
     func makeActivityQueryCommand() -> Data { data(hex: "0299b85a00000000000000000000000000000000") }
-    func makeHistoryQueryCommand() -> Data { data(hex: "1000000000000000000000000000000000000000") }
-    func makeHistoryMeasurementQueryCommand() -> Data { data(hex: "1600000000000000000000000000000000000000") }
+    /// Activity + sleep history for one day (0x10). Byte [1] is the day offset (0 = today ... 27),
+    /// verified on hardware: the ring answers with 0x10 per-minute step slots and 0x11 sleep stages.
+    func makeHistoryQueryCommand(dayOffset: Int = 0) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 20)
+        bytes[0] = 0x10
+        bytes[1] = UInt8(clamping: min(27, max(0, dayOffset)))
+        return Data(bytes)
+    }
+    /// Measurement (1-minute HR block) history for one day (0x16); same day-offset byte as 0x10.
+    func makeHistoryMeasurementQueryCommand(dayOffset: Int = 0) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 20)
+        bytes[0] = 0x16
+        bytes[1] = UInt8(clamping: min(27, max(0, dayOffset)))
+        return Data(bytes)
+    }
+    /// Sleep-staging windows (0x09). The ring only stages sleep inside these two stored windows:
+    /// `09 <napStartH napStartM napEndH napEndM> <nightStartH nightStartM nightEndH nightEndM>`, rest
+    /// zero (upstream issue #136, recovered from the vendor app). HARDWARE-UNVALIDATED here.
+    func makeSleepWindowsCommand(_ windows: JringSleepWindows) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 20)
+        bytes[0] = 0x09
+        let parts = [windows.napStartMinutes, windows.napEndMinutes,
+                     windows.nightStartMinutes, windows.nightEndMinutes]
+        for (i, minutes) in parts.enumerated() {
+            let m = ((minutes % 1440) + 1440) % 1440
+            bytes[1 + i * 2] = UInt8(m / 60)
+            bytes[2 + i * 2] = UInt8(m % 60)
+        }
+        return Data(bytes)
+    }
     func makeHeartRateStartCommand() -> Data { data(hex: "14b4000000000000000000000000000000000000") }
     func makeHeartRateStopCommand() -> Data { data(hex: "1500000000000000000000000000000000000000") }
     func makeFindRingCommand() -> Data { data(hex: "040a000000000000000000000000000000000000") }

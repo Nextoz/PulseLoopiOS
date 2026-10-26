@@ -29,9 +29,16 @@ final class JringSyncEngine: RingSyncEngine {
     /// per-day queries once the bit ordering is confirmed against real hardware.
     private(set) var bandCapabilities: JringBandCapabilities?
 
-    init(writer: RingCommandWriter?, clock: JringClock) {
+    /// Quiet / stall timeouts (seconds) for the per-day history pager; tests shorten them.
+    private let historySettleSeconds: Double
+    private let historyStallSeconds: Double
+
+    init(writer: RingCommandWriter?, clock: JringClock,
+         historySettleSeconds: Double = 3, historyStallSeconds: Double = 6) {
         self.writer = writer
         self.clock = clock
+        self.historySettleSeconds = historySettleSeconds
+        self.historyStallSeconds = historyStallSeconds
     }
 
     func runStartup() {
@@ -53,9 +60,40 @@ final class JringSyncEngine: RingSyncEngine {
         // every connect; without it the ring records almost nothing, which is why users previously
         // had to initialise with the vendor app first.
         enqueueMeasurementCommands(measurementSettings)
+        // 0x09 stores the nap/night windows inside which the ring stages sleep (hardware-unvalidated).
+        enqueueSleepWindows(measurementSettings.sleepWindows)
         writer?.enqueue(encoder.makeBandFunctionCommand())
-        writer?.enqueue(encoder.makeHistoryQueryCommand())
-        writer?.enqueue(encoder.makeHistoryMeasurementQueryCommand())
+        // History is paged one day at a time (0x10 then 0x16 per day) — the first pass of a
+        // connection backfills the last `firstSyncBackfillDays` days, later passes only today.
+        let days = backfilledThisConnection ? [0] : Array(0..<Self.firstSyncBackfillDays)
+        if pager.start(days: days) { backfilledThisConnection = true }
+    }
+
+    /// How many days (today = day 0) the first history pass of a connection requests. Easy to change.
+    static let firstSyncBackfillDays = 7
+
+    private lazy var pager = JringHistoryPager(
+        writer: writer, settleSeconds: historySettleSeconds, stallSeconds: historyStallSeconds)
+    private var backfilledThisConnection = false
+
+    func connectionDidStart() {
+        pager.cancel()
+        backfilledThisConnection = false
+    }
+
+    func connectionDidEnd() {
+        pager.cancel()
+    }
+
+    /// Fed by `JringDriver.ingest` with every inbound frame so the pager can see 0x10/0x11/0x16 streams.
+    func noteInboundFrame(_ data: Data) {
+        pager.noteFrame(data)
+    }
+
+    var isPagingHistory: Bool { pager.isRunning }
+
+    private func enqueueSleepWindows(_ windows: JringSleepWindows) {
+        writer?.enqueue(encoder.makeSleepWindowsCommand(windows))
     }
 
     func handle(_ event: RingDecodedEvent) {
@@ -94,8 +132,12 @@ final class JringSyncEngine: RingSyncEngine {
 
     /// Store *and* push immediately — the live "Save" path while connected.
     func applyMeasurementSettings(_ settings: MeasurementSettings) {
+        let windowsChanged = settings.sleepWindows != measurementSettings.sleepWindows
         measurementSettings = settings
         enqueueMeasurementCommands(settings)
+        // Re-send 0x09 only when the user actually edited the windows (workout cadence bumps reuse
+        // this path and must not spam it).
+        if windowsChanged { enqueueSleepWindows(settings.sleepWindows) }
     }
 
     /// Translate the device-agnostic settings into jring commands. Only the HR cadence maps to a
@@ -223,6 +265,8 @@ final class JringSyncEngine: RingSyncEngine {
     /// Post-workout backfill: re-request the 0x16 measurement history stream (1-min HR blocks) so
     /// readings taken while the phone was away land in the just-finished session.
     func syncVitalsHistory() {
+        // A stray `16 00` mid-backfill would truncate the day being streamed; the pager fetches HR anyway.
+        guard !pager.isRunning else { return }
         writer?.enqueue(encoder.makeHistoryMeasurementQueryCommand())
     }
 
