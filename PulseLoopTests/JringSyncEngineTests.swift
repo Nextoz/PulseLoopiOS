@@ -31,6 +31,7 @@ final class JringSyncEngineTests: XCTestCase {
             0x21,   // locale
             0x19,   // background monitoring  ← arms the ring's sensor logging
             0x09,   // sleep-staging windows
+            0x37,   // temperature mode (default off)
             0x20,   // capability bitmask
             0x10,   // activity history, day 0 (0x16 follows once that day's stream settles)
         ])

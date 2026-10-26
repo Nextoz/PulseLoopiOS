@@ -62,6 +62,8 @@ final class JringSyncEngine: RingSyncEngine {
         enqueueMeasurementCommands(measurementSettings)
         // 0x09 stores the nap/night windows inside which the ring stages sleep (hardware-unvalidated).
         enqueueSleepWindows(measurementSettings.sleepWindows)
+        // 0x37 temperature mode (default OFF, user toggle; hardware-unvalidated).
+        writer?.enqueue(encoder.makeTemperatureModeCommand(enabled: measurementSettings.jringTemperatureMode))
         writer?.enqueue(encoder.makeBandFunctionCommand())
         // History is paged one day at a time (0x10 then 0x16 per day) — the first pass of a
         // connection backfills the last `firstSyncBackfillDays` days, later passes only today.
@@ -133,11 +135,15 @@ final class JringSyncEngine: RingSyncEngine {
     /// Store *and* push immediately — the live "Save" path while connected.
     func applyMeasurementSettings(_ settings: MeasurementSettings) {
         let windowsChanged = settings.sleepWindows != measurementSettings.sleepWindows
+        let previousTemperatureMode = measurementSettings.jringTemperatureMode
         measurementSettings = settings
         enqueueMeasurementCommands(settings)
         // Re-send 0x09 only when the user actually edited the windows (workout cadence bumps reuse
         // this path and must not spam it).
         if windowsChanged { enqueueSleepWindows(settings.sleepWindows) }
+        if settings.jringTemperatureMode != previousTemperatureMode {
+            writer?.enqueue(encoder.makeTemperatureModeCommand(enabled: settings.jringTemperatureMode))
+        }
     }
 
     /// Translate the device-agnostic settings into jring commands. Only the HR cadence maps to a

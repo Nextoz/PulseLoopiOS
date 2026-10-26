@@ -28,6 +28,7 @@ struct MeasurementSettingsView: View {
     @State private var napEnd = JringSleepWindows.default.napEndMinutes
     @State private var nightStart = JringSleepWindows.default.nightStartMinutes
     @State private var nightEnd = JringSleepWindows.default.nightEndMinutes
+    @State private var jringTemperatureMode = false
     @State private var loaded = false
     @State private var saveStatus: String?
 
@@ -87,6 +88,14 @@ struct MeasurementSettingsView: View {
                 sleepWindowRow("Night ends", minutes: $nightEnd)
                 sleepWindowRow("Nap starts", minutes: $napStart)
                 sleepWindowRow("Nap ends", minutes: $napEnd)
+            }
+
+            SettingsGroup(
+                header: "Temperature (experimental)",
+                footer: "Sends the ring's temperature mode switch on connect. Unverified on hardware: it is not known "
+                    + "yet whether this starts background temperature logging or what scale the ring reports."
+            ) {
+                FormToggleRow(title: "Temperature logging", isOn: $jringTemperatureMode)
             }
         }
 
@@ -169,6 +178,7 @@ struct MeasurementSettingsView: View {
         napEnd = config.napEndMinutes
         nightStart = config.nightStartMinutes
         nightEnd = config.nightEndMinutes
+        jringTemperatureMode = config.jringTemperatureMode
     }
 
     private func save() {
@@ -187,6 +197,7 @@ struct MeasurementSettingsView: View {
         config.napEndMinutes = napEnd
         config.nightStartMinutes = nightStart
         config.nightEndMinutes = nightEnd
+        config.jringTemperatureMode = jringTemperatureMode
         MeasurementConfigRepository.save(config, context: modelContext)
         coordinator.applyMeasurementSettings()
         saveStatus = ble.state == .connected ? "Saved and sent to your ring." : "Saved — will apply on next sync."

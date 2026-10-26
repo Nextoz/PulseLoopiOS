@@ -548,6 +548,8 @@ final class DeviceMeasurementConfig {
     var napEndMinutes: Int = 18 * 60
     var nightStartMinutes: Int = 21 * 60
     var nightEndMinutes: Int = 11 * 60
+    /// jring temperature mode (0x37), default off. Unverified on hardware.
+    var jringTemperatureMode: Bool = false
 
     init(deviceId: UUID) {
         self.deviceId = deviceId
@@ -565,7 +567,8 @@ final class DeviceMeasurementConfig {
             sleepWindows: JringSleepWindows(
                 napStartMinutes: napStartMinutes, napEndMinutes: napEndMinutes,
                 nightStartMinutes: nightStartMinutes, nightEndMinutes: nightEndMinutes
-            )
+            ),
+            jringTemperatureMode: jringTemperatureMode
         )
     }
 }

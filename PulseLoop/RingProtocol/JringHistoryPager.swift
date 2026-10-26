@@ -14,7 +14,7 @@ import Foundation
 final class JringHistoryPager {
     nonisolated deinit {}   // skip the main-actor isolated-deinit hop (crashes on older sim runtimes)
 
-    private enum Leg { case activity, heartRate }
+    private enum Leg { case activity, heartRate, spo2, vitals }
 
     private weak var writer: RingCommandWriter?
     private let encoder = RingEncoder()
@@ -61,12 +61,16 @@ final class JringHistoryPager {
     func noteFrame(_ data: Data) {
         guard isRunning, data.count == 20, let cmd = data.first else { return }
         switch cmd {
-        case 0x10, 0x11:
+        case 0x10, 0x11, 0x39:   // 0x39 = temperature samples inside the 0x10 stream
             if leg == .activity { armTimer(settleNanos) }
+        case 0x40, 0x55:
+            guard leg == (cmd == 0x40 ? .spo2 : .vitals) else { return }
+            // All-zero payload = the day's end-of-stream slot; otherwise keep waiting for more.
+            if data.dropFirst(5).allSatisfy({ $0 == 0 }) { legSettled() } else { armTimer(settleNanos) }
         case 0x16:
             guard leg == .heartRate else { return }
             // 0x16 FF is the one genuine end-of-stream marker in this protocol.
-            if data[data.startIndex + 1] == 0xff { advance() } else { armTimer(settleNanos) }
+            if data[data.startIndex + 1] == 0xff { legSettled() } else { armTimer(settleNanos) }
         default:
             break
         }
@@ -77,7 +81,9 @@ final class JringHistoryPager {
         guard isRunning else { return }
         switch leg {
         case .activity: beginHeartRateLeg()
-        case .heartRate: advance()
+        case .heartRate: beginQueryLeg(.spo2)
+        case .spo2: beginQueryLeg(.vitals)
+        case .vitals: advance()
         }
     }
 
@@ -96,11 +102,19 @@ final class JringHistoryPager {
         armTimer(stallNanos)
     }
 
-    private func beginHeartRateLeg() {
+    private func beginHeartRateLeg() { beginQueryLeg(.heartRate) }
+
+    /// Start a per-day query leg (16 HR, 40 SpO2, 55 BP/vitals), one request at a time.
+    private func beginQueryLeg(_ next: Leg) {
         guard let day = currentDay else { return }
         cancelTimer()
-        leg = .heartRate
-        writer?.enqueue(encoder.makeHistoryMeasurementQueryCommand(dayOffset: day))
+        leg = next
+        switch next {
+        case .heartRate: writer?.enqueue(encoder.makeHistoryMeasurementQueryCommand(dayOffset: day))
+        case .spo2: writer?.enqueue(encoder.makeSpO2HistoryQueryCommand(dayOffset: day))
+        case .vitals: writer?.enqueue(encoder.makeVitalsHistoryQueryCommand(dayOffset: day))
+        case .activity: writer?.enqueue(encoder.makeHistoryQueryCommand(dayOffset: day))
+        }
         armTimer(stallNanos)
     }
 

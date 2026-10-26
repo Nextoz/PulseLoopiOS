@@ -337,6 +337,13 @@ struct RingDecoder {
         if packet.commandId == 0x10 {
             return decodeActivityHistory(bytes)
         }
+        switch packet.commandId {
+        case 0x40: return decodeSpO2History(bytes)
+        case 0x55: return decodeBloodPressureHistory(bytes)
+        case 0x39: return decodeTemperatureHistory(bytes)
+        case 0x38: return decodeLiveTemperature(bytes)
+        default: break
+        }
         // The 0x0c status payload carries both the embedded address and the firmware string; emit both.
         if packet.commandId == 0x0c, bytes.count >= 13 {
             return [decode(data), .firmware(version: firmwareString(bytes))]
@@ -355,6 +362,82 @@ struct RingDecoder {
         let total = bytes[5..<20].reduce(0) { $0 + Int($1) }
         guard total > 0 else { return [.commandAck(commandId: 0x10)] }
         return [.activityBucket(timestamp: ringDate(u32le(bytes, 1)), steps: total, distanceMeters: 0)]
+    }
+
+    /// Which `MeasurementKind` each of the 0x55 record's fields f3, f4, f5 carries. f1 = systolic and
+    /// f2 = diastolic are high confidence; f3..f5 are UNVERIFIED (observed f3 13-47, f4 50-66,
+    /// f5 80-83; candidates fatigue / stress / HRV / blood sugar x10). Change the labels HERE only;
+    /// `nil` drops a field. The raw frames are always kept in the raw frame log.
+    static let history55FieldKinds: [MeasurementKind?] = [.fatigue, .stress, .hrv]
+
+    /// 0x40 SpO2 history (verified): `[1..4]` ts of a 15-min slot, `[5..19]` 15 x u8 SpO2 % holding one
+    /// repeated value (one measurement per frame, every 30 min). An all-zero slot ends the day.
+    /// One sample per frame at the frame timestamp; zeros are skipped; dedup is by (kind, timestamp).
+    func decodeSpO2History(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 20, let value = bytes[5..<20].first(where: { $0 > 0 }) else {
+            return [.commandAck(commandId: 0x40)]
+        }
+        return [.historyMeasurement(kind: .spo2, value: Double(value), timestamp: ringDate(u32le(bytes, 1)))]
+    }
+
+    /// 0x55 history (verified layout): `[1..4]` ts, then 3 identical 5-byte records f1..f5 (one
+    /// measurement per frame, every 30 min); an all-zero slot ends the day. f1 = systolic, f2 =
+    /// diastolic, f3..f5 per `history55FieldKinds` (UNVERIFIED labels). Only the first record is used.
+    func decodeBloodPressureHistory(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 20 else { return [.commandAck(commandId: 0x55)] }
+        let ts = ringDate(u32le(bytes, 1))
+        let f = Array(bytes[5..<10])
+        var events: [RingDecodedEvent] = []
+        if f[0] > 0, f[1] > 0 {
+            events.append(.historyMeasurement(kind: .bloodPressureSystolic, value: Double(f[0]), timestamp: ts))
+            events.append(.historyMeasurement(kind: .bloodPressureDiastolic, value: Double(f[1]), timestamp: ts))
+        }
+        for (i, kind) in Self.history55FieldKinds.enumerated() where 2 + i < f.count {
+            if let kind, f[2 + i] > 0 {
+                events.append(.historyMeasurement(kind: kind, value: Double(f[2 + i]), timestamp: ts))
+            }
+        }
+        return events.isEmpty ? [.commandAck(commandId: 0x55)] : events
+    }
+
+    /// Plausible skin temperature from a raw LE16: try /100 then /10, accept 30...43 C. UNVERIFIED scale.
+    static func plausibleCelsius(_ raw: Int) -> Double? {
+        for divisor in [100.0, 10.0] {
+            let c = Double(raw) / divisor
+            if (30.0...43.0).contains(c) { return c }
+        }
+        return nil
+    }
+
+    /// 0x39 temperature history, arriving inside the `10 <day>` stream. UNVERIFIED ON HARDWARE (never
+    /// seen yet; layout from jring-client's static analysis): `[1..4]` ts, then 3 five-minute samples,
+    /// each two LE16 at `[5+4i]`, `[7+4i]` (bytes 5..16). Per sample the first plausible value of the
+    /// pair is stored at ts + 5 min * i. Raw values stay in the raw frame log.
+    func decodeTemperatureHistory(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 17 else { return [.commandAck(commandId: 0x39)] }
+        let base = ringDate(u32le(bytes, 1))
+        var events: [RingDecodedEvent] = []
+        for i in 0..<3 {
+            let a = Int(bytes[5 + 4 * i]) | Int(bytes[6 + 4 * i]) << 8
+            let b = Int(bytes[7 + 4 * i]) | Int(bytes[8 + 4 * i]) << 8
+            if let c = Self.plausibleCelsius(a) ?? Self.plausibleCelsius(b) {
+                events.append(.historyMeasurement(kind: .temperature, value: c,
+                                                  timestamp: base.addingTimeInterval(Double(i) * 300)))
+            }
+        }
+        return events.isEmpty ? [.commandAck(commandId: 0x39)] : events
+    }
+
+    /// 0x38 live temperature. UNVERIFIED ON HARDWARE: two LE16 at `[1..2]` and `[3..4]`, same
+    /// plausibility rule as the history samples.
+    func decodeLiveTemperature(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 5 else { return [.commandAck(commandId: 0x38)] }
+        let a = Int(bytes[1]) | Int(bytes[2]) << 8
+        let b = Int(bytes[3]) | Int(bytes[4]) << 8
+        if let c = Self.plausibleCelsius(a) ?? Self.plausibleCelsius(b) {
+            return [.temperatureSample(celsius: c, timestamp: Date())]
+        }
+        return [.commandAck(commandId: 0x38)]
     }
 
     /// Decode a 0x16 `0xA0` data block: base timestamp at [2..5] (LE u32), then two consecutive
@@ -514,6 +597,22 @@ struct RingEncoder {
     func makeHistoryMeasurementQueryCommand(dayOffset: Int = 0) -> Data {
         var bytes = [UInt8](repeating: 0, count: 20)
         bytes[0] = 0x16
+        bytes[1] = UInt8(clamping: min(27, max(0, dayOffset)))
+        return Data(bytes)
+    }
+    /// Temperature mode (0x37): likely the background temperature-logging switch (UNVERIFIED).
+    func makeTemperatureModeCommand(enabled: Bool) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 20)
+        bytes[0] = 0x37
+        bytes[1] = enabled ? 1 : 0
+        return Data(bytes)
+    }
+    /// SpO2 history for one day (0x40) and BP/vitals history for one day (0x55).
+    func makeSpO2HistoryQueryCommand(dayOffset: Int = 0) -> Data { dayQuery(0x40, dayOffset) }
+    func makeVitalsHistoryQueryCommand(dayOffset: Int = 0) -> Data { dayQuery(0x55, dayOffset) }
+    private func dayQuery(_ opcode: UInt8, _ dayOffset: Int) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 20)
+        bytes[0] = opcode
         bytes[1] = UInt8(clamping: min(27, max(0, dayOffset)))
         return Data(bytes)
     }

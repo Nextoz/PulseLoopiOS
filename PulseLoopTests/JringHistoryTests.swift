@@ -124,6 +124,70 @@ final class JringHistoryTests: XCTestCase {
         XCTAssertEqual(today.steps, 40)
     }
 
+    // MARK: - Phase 2 decoders (synthetic frames)
+
+    func testSpO2HistoryFrame() {
+        let ts: UInt32 = 1_700_000_900
+        let data = Data([0x40] + le32(ts) + [UInt8](repeating: 97, count: 15))
+        guard case let .historyMeasurement(kind, value, when) = utcDecoder().decodeAll(data)[0] else {
+            return XCTFail()
+        }
+        XCTAssertEqual(kind, .spo2)
+        XCTAssertEqual(value, 97)
+        XCTAssertEqual(when, Date(timeIntervalSince1970: TimeInterval(ts)))
+        // The all-zero end-of-day slot stores nothing.
+        let end = Data([0x40] + le32(ts) + [UInt8](repeating: 0, count: 15))
+        guard case .commandAck(commandId: 0x40) = utcDecoder().decodeAll(end)[0] else { return XCTFail() }
+    }
+
+    func testVitals55FrameMapsBloodPressureAndConfiguredFields() {
+        let ts: UInt32 = 1_700_000_900
+        let record: [UInt8] = [112, 72, 30, 55, 81]
+        let data = Data([0x55] + le32(ts) + record + record + record)
+        let events = utcDecoder().decodeAll(data)
+        var seen: [MeasurementKind: Double] = [:]
+        for case let .historyMeasurement(kind, value, _) in events { seen[kind] = value }
+        XCTAssertEqual(seen[.bloodPressureSystolic], 112)
+        XCTAssertEqual(seen[.bloodPressureDiastolic], 72)
+        // f3, f4, f5 follow the single (unverified) mapping constant.
+        for (i, kind) in RingDecoder.history55FieldKinds.enumerated() {
+            if let kind { XCTAssertEqual(seen[kind], Double(record[2 + i])) }
+        }
+        let end = Data([0x55] + le32(ts) + [UInt8](repeating: 0, count: 15))
+        guard case .commandAck(commandId: 0x55) = utcDecoder().decodeAll(end)[0] else { return XCTFail() }
+    }
+
+    func testTemperatureHistoryAndLiveUsePlausibilityRule() {
+        let ts: UInt32 = 1_700_000_900
+        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xff), UInt8(v >> 8)] }
+        // Sample 0: 3650 -> 36.5 (/100). Sample 1: 362 -> 36.2 (/10). Sample 2: implausible.
+        let body = le16(3650) + le16(0) + le16(362) + le16(0) + le16(9999) + le16(1)
+        let data = Data([0x39] + le32(ts) + body + [0, 0, 0])
+        let events = utcDecoder().decodeAll(data)
+        var temps: [(Double, Date)] = []
+        for case let .historyMeasurement(kind, value, when) in events where kind == .temperature {
+            temps.append((value, when))
+        }
+        XCTAssertEqual(temps.count, 2)
+        XCTAssertEqual(temps[0].0, 36.5, accuracy: 0.001)
+        XCTAssertEqual(temps[1].0, 36.2, accuracy: 0.001)
+        XCTAssertEqual(temps[1].1.timeIntervalSince(temps[0].1), 300)
+
+        let live = utcDecoder().decodeAll(Data([0x38] + le16(3712) + le16(0)))
+        guard case let .temperatureSample(celsius, _) = live[0] else { return XCTFail() }
+        XCTAssertEqual(celsius, 37.12, accuracy: 0.001)
+        guard case .commandAck(commandId: 0x38) = utcDecoder().decodeAll(Data([0x38] + le16(5) + le16(7)))[0]
+        else { return XCTFail() }
+    }
+
+    func testPhase2Encoders() {
+        let enc = RingEncoder()
+        XCTAssertEqual(Array([UInt8](enc.makeSpO2HistoryQueryCommand(dayOffset: 2)).prefix(2)), [0x40, 2])
+        XCTAssertEqual(Array([UInt8](enc.makeVitalsHistoryQueryCommand(dayOffset: 5)).prefix(2)), [0x55, 5])
+        XCTAssertEqual(Array([UInt8](enc.makeTemperatureModeCommand(enabled: true)).prefix(2)), [0x37, 1])
+        XCTAssertEqual(Array([UInt8](enc.makeTemperatureModeCommand(enabled: false)).prefix(2)), [0x37, 0])
+    }
+
     // MARK: - Pager
 
     func testPagerRequestsOneDayAtATimeAndAdvancesOnStreamEnd() {
@@ -145,13 +209,26 @@ final class JringHistoryTests: XCTestCase {
         pager.noteFrame(frame([0x16, 0xa0]))
         XCTAssertEqual(writer.heads.count, 2)
         pager.noteFrame(frame([0x16, 0xff]))
-        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x10, 1]])
+        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x40, 0]])
 
-        // Empty past day: one all-zero slot, then quiet, then 16 FF.
+        // SpO2 then BP/vitals legs: a data frame keeps waiting, the all-zero slot ends the leg.
+        pager.noteFrame(frame([0x40, 1, 2, 3, 4, 97]))
+        XCTAssertEqual(writer.heads.count, 3)
+        pager.noteFrame(frame([0x40, 1, 2, 3, 4]))
+        XCTAssertEqual(writer.heads.last, [0x55, 0])
+        pager.noteFrame(frame([0x55, 1, 2, 3, 4, 110, 70]))
+        XCTAssertEqual(writer.heads.count, 4)
+        pager.noteFrame(frame([0x55, 1, 2, 3, 4]))
+        XCTAssertEqual(writer.heads.last, [0x10, 1])
+
+        // Empty past day: one all-zero slot, then quiet, then 16 FF, then empty 40 and 55.
         pager.noteFrame(stepsFrame(slotStart: 1_700_000_000, perMinute: []))
         pager.legSettled()
         pager.noteFrame(frame([0x16, 0xff]))
-        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x10, 1], [0x16, 1]])
+        pager.noteFrame(frame([0x40, 1, 2, 3, 4]))
+        pager.noteFrame(frame([0x55, 1, 2, 3, 4]))
+        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x40, 0], [0x55, 0],
+                                      [0x10, 1], [0x16, 1], [0x40, 1], [0x55, 1]])
         XCTAssertFalse(pager.isRunning)
     }
 
@@ -172,8 +249,9 @@ final class JringHistoryTests: XCTestCase {
         let writer = FakeWriter()
         let pager = JringHistoryPager(writer: writer, settleSeconds: 0.02, stallSeconds: 0.02)
         pager.start(days: [0, 1])
-        try await Task.sleep(nanoseconds: 600_000_000)
-        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x10, 1], [0x16, 1]])
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(writer.heads, [[0x10, 0], [0x16, 0], [0x40, 0], [0x55, 0],
+                                      [0x10, 1], [0x16, 1], [0x40, 1], [0x55, 1]])
         XCTAssertFalse(pager.isRunning)
     }
 
@@ -189,18 +267,21 @@ final class JringHistoryTests: XCTestCase {
         let (engine, writer) = makeEngine()
         engine.connectionDidStart()
         engine.runStartup()
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        try await Task.sleep(nanoseconds: 3_000_000_000)
 
-        let history = writer.heads.filter { $0[0] == 0x10 || $0[0] == 0x16 }
+        let legs: Set<UInt8> = [0x10, 0x16, 0x40, 0x55]
+        let history = writer.heads.filter { legs.contains($0[0]) }
         var expected: [[UInt8]] = []
-        for day in 0..<JringSyncEngine.firstSyncBackfillDays { expected += [[0x10, UInt8(day)], [0x16, UInt8(day)]] }
+        for day in 0..<JringSyncEngine.firstSyncBackfillDays {
+            expected += [[0x10, UInt8(day)], [0x16, UInt8(day)], [0x40, UInt8(day)], [0x55, UInt8(day)]]
+        }
         XCTAssertEqual(history, expected)
         XCTAssertFalse(engine.isPagingHistory)
 
         writer.sent.removeAll()
         engine.runStartup()
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(writer.heads.filter { $0[0] == 0x10 || $0[0] == 0x16 }, [[0x10, 0], [0x16, 0]])
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(writer.heads.filter { legs.contains($0[0]) }, [[0x10, 0], [0x16, 0], [0x40, 0], [0x55, 0]])
 
         // A new connection backfills again.
         writer.sent.removeAll()
@@ -223,6 +304,8 @@ final class JringHistoryTests: XCTestCase {
         XCTAssertNotNil(i09)
         XCTAssertEqual(i09, i19.map { $0 + 1 })
         XCTAssertEqual(Array([UInt8](writer.sent[i09!])[0..<9]), [0x09, 14, 0, 15, 0, 22, 0, 9, 0])
+        // Temperature mode defaults OFF and is sent right after the sleep windows.
+        XCTAssertEqual(Array([UInt8](writer.sent[i09! + 1]).prefix(2)), [0x37, 0])
         engine.connectionDidEnd()
 
         // Applying unchanged settings (e.g. a workout cadence bump) must not resend 0x09 ...

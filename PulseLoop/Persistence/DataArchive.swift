@@ -518,12 +518,14 @@ nonisolated struct ArchiveDeviceMeasurementConfig: Codable, Sendable {
     var napEndMinutes: Int?
     var nightStartMinutes: Int?
     var nightEndMinutes: Int?
+    var jringTemperatureMode: Bool?
 
     @MainActor init(_ m: DeviceMeasurementConfig) {
         napStartMinutes = m.napStartMinutes
         napEndMinutes = m.napEndMinutes
         nightStartMinutes = m.nightStartMinutes
         nightEndMinutes = m.nightEndMinutes
+        jringTemperatureMode = m.jringTemperatureMode
         deviceId = m.deviceId
         hrIntervalMinutes = m.hrIntervalMinutes
         hrEnabled = m.hrEnabled
@@ -547,6 +549,7 @@ nonisolated struct ArchiveDeviceMeasurementConfig: Codable, Sendable {
         if let v = napEndMinutes { m.napEndMinutes = v }
         if let v = nightStartMinutes { m.nightStartMinutes = v }
         if let v = nightEndMinutes { m.nightEndMinutes = v }
+        if let v = jringTemperatureMode { m.jringTemperatureMode = v }
         context.insert(m)
     }
 }
