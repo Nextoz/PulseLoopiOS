@@ -22,6 +22,8 @@ struct PrivacyDataSettingsView: View {
 
     // Backup (full export/import) state.
     @State private var exportURL: URL?
+    /// Raw jring frame log export (JSON Lines), shared via the share sheet.
+    @State private var frameLogURL: URL?
     @State private var showImporter = false
     /// File picked while the app still has data — held until the user confirms the replace.
     @State private var pendingImportURL: URL?
@@ -73,10 +75,18 @@ struct PrivacyDataSettingsView: View {
                     header: "Backup",
                     footer: "Export everything — metrics, sleep, workouts, coach history, settings — to a JSON file "
                         + "you can save, AirDrop, or analyze. Importing a backup replaces all data in the app. "
-                        + "API keys are never included."
+                        + "API keys are never included. “Export raw ring frames” shares the on-device log of every "
+                        + "Bluetooth frame exchanged with a jring in the last 30 days (JSON Lines); it never leaves "
+                        + "the device unless you share it."
                 ) {
                     actionRow("Export all data", systemImage: "square.and.arrow.up.on.square") {
                         exportAllData()
+                    }
+                    actionRow("Export raw ring frames", systemImage: "waveform.path.ecg") {
+                        // Local-only log of every jring frame (last 30 days) as JSON Lines.
+                        Task {
+                            frameLogURL = await Task.detached { try? RingFrameLog.shared.exportFile() }.value
+                        }
                     }
                     actionRow("Import data…", systemImage: "square.and.arrow.down") {
                         showImporter = true
@@ -173,6 +183,9 @@ struct PrivacyDataSettingsView: View {
             DiagnosticsShareSheet(items: [url])
         }
         .sheet(item: $exportURL) { url in
+            DiagnosticsShareSheet(items: [url])
+        }
+        .sheet(item: $frameLogURL) { url in
             DiagnosticsShareSheet(items: [url])
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in

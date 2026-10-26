@@ -685,6 +685,7 @@ final class RingBLEClient: NSObject {
         // driver's `ingest` (that is the inbound path and, for big-data devices, would corrupt the
         // reassembly buffer). The command id is enough annotation for the trace.
         let decoded = RingDecodedEvent.commandAck(commandId: data.first ?? 0)
+        if activeDeviceType == .jring { RingFrameLog.shared.append(incoming: direction == .incoming, data) }
         publish(.rawPacket(direction: direction, data: data, decoded: decoded))
     }
 
@@ -1034,6 +1035,7 @@ extension RingBLEClient: CBPeripheralDelegate {
             guard let driver = activeDriver, driver.notifyUUIDs.contains(characteristic.uuid) else { return }
             // Capture before decoding: fragmented, malformed and multi-frame notifications each
             // occupy exactly one trace row. Decoded consumers use their own event channel.
+            if activeDeviceType == .jring { RingFrameLog.shared.append(incoming: true, value) }
             RingNotificationDelivery.receive(value,
                 decode: { driver.ingest(value, from: characteristic.uuid) },
                 publish: { publish($0) }, deliver: { deliverDecoded($0) })
