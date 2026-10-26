@@ -230,7 +230,7 @@ final class JringHistoryTests: XCTestCase {
         engine.applyMeasurementSettings(settings)
         XCTAssertFalse(writer.sent.contains { $0[0] == 0x09 })
         // ... but editing the windows does.
-        settings.nightEndMinutes = 8 * 60
+        settings.sleepWindows.nightEndMinutes = 8 * 60
         engine.applyMeasurementSettings(settings)
         XCTAssertEqual(writer.sent.filter { $0[0] == 0x09 }.count, 1)
     }
