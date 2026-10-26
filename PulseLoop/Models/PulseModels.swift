@@ -542,6 +542,12 @@ final class DeviceMeasurementConfig {
     var hrvEnabled: Bool = true
     var temperatureEnabled: Bool = true
     var updatedAt: Date = Date()
+    /// jring sleep-staging windows (command 0x09), minutes since midnight. Defaults: nap 13:00-18:00,
+    /// night 21:00-11:00. Additive, defaulted fields: safe lightweight migration.
+    var napStartMinutes: Int = 13 * 60
+    var napEndMinutes: Int = 18 * 60
+    var nightStartMinutes: Int = 21 * 60
+    var nightEndMinutes: Int = 11 * 60
 
     init(deviceId: UUID) {
         self.deviceId = deviceId
@@ -555,7 +561,11 @@ final class DeviceMeasurementConfig {
             spo2Enabled: spo2Enabled,
             stressEnabled: stressEnabled,
             hrvEnabled: hrvEnabled,
-            temperatureEnabled: temperatureEnabled
+            temperatureEnabled: temperatureEnabled,
+            sleepWindows: JringSleepWindows(
+                napStartMinutes: napStartMinutes, napEndMinutes: napEndMinutes,
+                nightStartMinutes: nightStartMinutes, nightEndMinutes: nightEndMinutes
+            )
         )
     }
 }

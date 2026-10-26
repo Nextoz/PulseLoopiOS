@@ -513,8 +513,17 @@ nonisolated struct ArchiveDeviceMeasurementConfig: Codable, Sendable {
     var hrvEnabled: Bool
     var temperatureEnabled: Bool
     var updatedAt: Date
+    // Optional so archives written before the jring sleep windows existed still decode.
+    var napStartMinutes: Int?
+    var napEndMinutes: Int?
+    var nightStartMinutes: Int?
+    var nightEndMinutes: Int?
 
     @MainActor init(_ m: DeviceMeasurementConfig) {
+        napStartMinutes = m.napStartMinutes
+        napEndMinutes = m.napEndMinutes
+        nightStartMinutes = m.nightStartMinutes
+        nightEndMinutes = m.nightEndMinutes
         deviceId = m.deviceId
         hrIntervalMinutes = m.hrIntervalMinutes
         hrEnabled = m.hrEnabled
@@ -534,6 +543,10 @@ nonisolated struct ArchiveDeviceMeasurementConfig: Codable, Sendable {
         m.hrvEnabled = hrvEnabled
         m.temperatureEnabled = temperatureEnabled
         m.updatedAt = updatedAt
+        if let v = napStartMinutes { m.napStartMinutes = v }
+        if let v = napEndMinutes { m.napEndMinutes = v }
+        if let v = nightStartMinutes { m.nightStartMinutes = v }
+        if let v = nightEndMinutes { m.nightEndMinutes = v }
         context.insert(m)
     }
 }

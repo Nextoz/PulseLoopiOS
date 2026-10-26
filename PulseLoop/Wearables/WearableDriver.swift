@@ -121,6 +121,22 @@ extension WearableDriver {
     func servicesDiscovered(_ services: [CBUUID]) {}
 }
 
+/// The two windows inside which the jring stages sleep (command 0x09), as minutes since local
+/// midnight. A window may wrap past midnight (night 21:00 -> 11:00). The ring stages nothing outside
+/// them. Defaults: night 21:00-11:00, nap 13:00-18:00 (the vendor app uses 21:00-08:00 / 13:00-14:00).
+/// HARDWARE-UNVALIDATED: the byte layout comes from upstream issue #136, not from a capture here.
+struct JringSleepWindows: Sendable, Equatable {
+    var napStartMinutes: Int
+    var napEndMinutes: Int
+    var nightStartMinutes: Int
+    var nightEndMinutes: Int
+
+    static let `default` = JringSleepWindows(
+        napStartMinutes: 13 * 60, napEndMinutes: 18 * 60,
+        nightStartMinutes: 21 * 60, nightEndMinutes: 11 * 60
+    )
+}
+
 /// User-chosen all-day measurement configuration, passed as a plain value from the app layer into a
 /// sync engine (the engine never reads SwiftData itself). Devices that support `.measurementInterval`
 /// (Colmi) translate this into the relevant ring commands; others ignore it.
@@ -132,6 +148,8 @@ struct MeasurementSettings: Sendable, Equatable {
     var stressEnabled: Bool
     var hrvEnabled: Bool
     var temperatureEnabled: Bool
+    /// jring-only sleep-staging windows (0x09). Other families ignore them.
+    var sleepWindows: JringSleepWindows = .default
 
     /// The current firmware default (matches the previous hard-coded Colmi startup behaviour).
     static let allOnDefault = MeasurementSettings(

@@ -23,6 +23,11 @@ struct MeasurementSettingsView: View {
     @State private var stressEnabled = true
     @State private var hrvEnabled = true
     @State private var temperatureEnabled = true
+    // jring sleep-staging windows (minutes since midnight) — see `JringSleepWindows`.
+    @State private var napStart = JringSleepWindows.default.napStartMinutes
+    @State private var napEnd = JringSleepWindows.default.napEndMinutes
+    @State private var nightStart = JringSleepWindows.default.nightStartMinutes
+    @State private var nightEnd = JringSleepWindows.default.nightEndMinutes
     @State private var loaded = false
     @State private var saveStatus: String?
 
@@ -71,6 +76,20 @@ struct MeasurementSettingsView: View {
             if capabilities.contains(.temperature) { FormToggleRow(title: "Skin temperature", isOn: $temperatureEnabled) }
         }
 
+        if ble.activeDeviceType == .jring {
+            SettingsGroup(
+                header: "Sleep windows (experimental)",
+                footer: "The ring only stages sleep inside these two windows (night may cross midnight). "
+                    + "Unvalidated on hardware: the command layout comes from the vendor app, so check "
+                    + "that sleep actually shows up after a night."
+            ) {
+                sleepWindowRow("Night starts", minutes: $nightStart)
+                sleepWindowRow("Night ends", minutes: $nightEnd)
+                sleepWindowRow("Nap starts", minutes: $napStart)
+                sleepWindowRow("Nap ends", minutes: $napEnd)
+            }
+        }
+
         PrimaryButton(title: "Save & sync to ring", systemImage: "checkmark") { save() }
 
         if let saveStatus {
@@ -108,6 +127,31 @@ struct MeasurementSettingsView: View {
         }
     }
 
+    private func sleepWindowRow(_ title: String, minutes: Binding<Int>) -> some View {
+        FormField {
+            HStack {
+                Text(title).font(PulseFont.subheadline).foregroundStyle(PulseColors.textPrimary)
+                Spacer()
+                DatePicker(
+                    title,
+                    selection: Binding(
+                        get: {
+                            Calendar.current.date(bySettingHour: minutes.wrappedValue / 60,
+                                                  minute: minutes.wrappedValue % 60,
+                                                  second: 0, of: Date()) ?? Date()
+                        },
+                        set: {
+                            let c = Calendar.current.dateComponents([.hour, .minute], from: $0)
+                            minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+                        }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+                .labelsHidden()
+            }
+        }
+    }
+
     // MARK: - Load / save
 
     private func loadIfNeeded() {
@@ -121,6 +165,10 @@ struct MeasurementSettingsView: View {
         stressEnabled = config.stressEnabled
         hrvEnabled = config.hrvEnabled
         temperatureEnabled = config.temperatureEnabled
+        napStart = config.napStartMinutes
+        napEnd = config.napEndMinutes
+        nightStart = config.nightStartMinutes
+        nightEnd = config.nightEndMinutes
     }
 
     private func save() {
@@ -135,6 +183,10 @@ struct MeasurementSettingsView: View {
         config.stressEnabled = stressEnabled
         config.hrvEnabled = hrvEnabled
         config.temperatureEnabled = temperatureEnabled
+        config.napStartMinutes = napStart
+        config.napEndMinutes = napEnd
+        config.nightStartMinutes = nightStart
+        config.nightEndMinutes = nightEnd
         MeasurementConfigRepository.save(config, context: modelContext)
         coordinator.applyMeasurementSettings()
         saveStatus = ble.state == .connected ? "Saved and sent to your ring." : "Saved — will apply on next sync."
