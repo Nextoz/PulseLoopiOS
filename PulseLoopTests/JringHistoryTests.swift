@@ -304,8 +304,8 @@ final class JringHistoryTests: XCTestCase {
         XCTAssertNotNil(i09)
         XCTAssertEqual(i09, i19.map { $0 + 1 })
         XCTAssertEqual(Array([UInt8](writer.sent[i09!])[0..<9]), [0x09, 14, 0, 15, 0, 22, 0, 9, 0])
-        // Temperature mode defaults OFF and is sent right after the sleep windows.
-        XCTAssertEqual(Array([UInt8](writer.sent[i09! + 1]).prefix(2)), [0x37, 0])
+        // Temperature mode defaults ON (vault-0.3) and is sent right after the sleep windows.
+        XCTAssertEqual(Array([UInt8](writer.sent[i09! + 1]).prefix(2)), [0x37, 1])
         engine.connectionDidEnd()
 
         // Applying unchanged settings (e.g. a workout cadence bump) must not resend 0x09 ...
