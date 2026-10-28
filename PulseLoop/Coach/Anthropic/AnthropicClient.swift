@@ -209,7 +209,7 @@ final class AnthropicClient: ResponsesClient, @unchecked Sendable {
         }
         request.httpBody = bodyData
         // Thinking runs before the reply, so a turn takes longer than a chat completion.
-        request.timeoutInterval = 120
+        request.timeoutInterval = 240   // non-streaming with adaptive thinking: no bytes arrive until the turn is done
 
         let data: Data
         let response: URLResponse
