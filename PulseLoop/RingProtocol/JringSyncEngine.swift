@@ -62,7 +62,7 @@ final class JringSyncEngine: RingSyncEngine {
         enqueueMeasurementCommands(measurementSettings)
         // 0x09 stores the nap/night windows inside which the ring stages sleep (hardware-unvalidated).
         enqueueSleepWindows(measurementSettings.sleepWindows)
-        // 0x37 temperature mode (default OFF, user toggle; hardware-unvalidated).
+        // 0x37 temperature mode (default ON, user toggle; hardware-unvalidated).
         writer?.enqueue(encoder.makeTemperatureModeCommand(enabled: measurementSettings.jringTemperatureMode))
         writer?.enqueue(encoder.makeBandFunctionCommand())
         // History is paged one day at a time (0x10 then 0x16 per day) — the first pass of a

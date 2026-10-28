@@ -74,7 +74,10 @@ struct MeasurementSettingsView: View {
             if capabilities.contains(.spo2) { FormToggleRow(title: "Blood oxygen (SpO₂)", isOn: $spo2Enabled) }
             if capabilities.contains(.stress) { FormToggleRow(title: "Stress", isOn: $stressEnabled) }
             if capabilities.contains(.hrv) { FormToggleRow(title: "HRV", isOn: $hrvEnabled) }
-            if capabilities.contains(.temperature) { FormToggleRow(title: "Skin temperature", isOn: $temperatureEnabled) }
+            // jring arms temperature with its own 0x37 switch (below); this generic toggle sends nothing there.
+            if capabilities.contains(.temperature), ble.activeDeviceType != .jring {
+                FormToggleRow(title: "Skin temperature", isOn: $temperatureEnabled)
+            }
         }
 
         if ble.activeDeviceType == .jring {

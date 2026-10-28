@@ -150,8 +150,8 @@ struct MeasurementSettings: Sendable, Equatable {
     var temperatureEnabled: Bool
     /// jring-only sleep-staging windows (0x09). Other families ignore them.
     var sleepWindows: JringSleepWindows = .default
-    /// jring-only temperature mode (0x37), default OFF. UNVERIFIED on hardware.
-    var jringTemperatureMode = false
+    /// jring-only temperature mode (0x37), default ON. UNVERIFIED on hardware.
+    var jringTemperatureMode = true
 
     /// The current firmware default (matches the previous hard-coded Colmi startup behaviour).
     static let allOnDefault = MeasurementSettings(

@@ -33,6 +33,9 @@ final class JringCoordinator: WearableCoordinator {
         .measurementInterval,
         // 56ff combined-sensor metrics decoded from the 0x24 packet.
         .bloodPressure, .bloodSugar, .fatigue, .stress, .hrv,
+        // Background temperature (0x39 inside the 0x10 stream), armed by the 0x37 mode switch. Declared
+        // so Today/Vitals show the card; the decode and scale are still unverified on hardware.
+        .temperature,
     ]
 
     let iconSystemName = "circle.hexagongrid.circle.fill"

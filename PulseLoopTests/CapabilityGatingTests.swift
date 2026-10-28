@@ -105,6 +105,16 @@ final class CapabilityGatingTests: XCTestCase {
         XCTAssertTrue(ColmiCoordinator().capabilities.contains(.manualHeartRate))
     }
 
+    func testJringDeclaresTemperature() {
+        // Without the capability Today/Vitals hide the temperature card even when 0x39 samples arrive.
+        XCTAssertTrue(JringCoordinator().capabilities.contains(.temperature))
+        XCTAssertTrue(MetricKey.temperature.isSupported(by: JringCoordinator().capabilities))
+    }
+
+    func testJringTemperatureModeDefaultsOn() {
+        XCTAssertTrue(MeasurementSettings.allOnDefault.jringTemperatureMode)
+    }
+
     func testLegacyDeviceFallsBackToBaseMetrics() throws {
         // A device row that predates capability stamping (empty capabilitiesRaw) should still show
         // the base metrics so existing users don't lose HR/SpO₂.
