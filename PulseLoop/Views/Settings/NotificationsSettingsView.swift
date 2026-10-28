@@ -47,7 +47,7 @@ struct NotificationsSettingsView: View {
     @ViewBuilder private var batteryAlertControls: some View {
         SettingsGroup(
             header: "Ring battery alerts",
-            footer: "Get a heads-up when your ring drops below 20% and 10%."
+            footer: "Get a heads-up when your ring reaches 20% and 10%."
         ) {
             FormToggleRow(title: "Low battery notifications", isOn: Binding(
                 get: { batteryAlertsEnabled },

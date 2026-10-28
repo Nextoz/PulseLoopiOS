@@ -149,6 +149,12 @@ struct SettingsView: View {
         rows.append(SettingsRowItem(icon: "heart.fill", tint: PulseColors.heartRate, title: "Apple Health") {
             path.append(AppRoute.settingsHealth)
         })
+        // jring-only (the only family with BP), like Calibration: the gesture discovery screen.
+        if caps.contains(.bloodPressure) {
+            rows.append(SettingsRowItem(icon: "hand.tap", tint: PulseColors.accent, title: "Ring Gestures (lab)") {
+                path.append(AppRoute.settingsGestureLab)
+            })
+        }
         rows.append(SettingsRowItem(
             icon: "bell.badge", tint: PulseColors.heartRate, title: "Health Alerts",
             trailingValue: HealthAlertPrefsStore.shared.prefs.enabled ? "On" : "Off"

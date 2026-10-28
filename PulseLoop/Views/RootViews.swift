@@ -176,6 +176,8 @@ struct RootAppView: View {
                     AppleHealthSettingsView()
                 case .settingsHealthAlerts:
                     HealthAlertsSettingsView()
+                case .settingsGestureLab:
+                    RingGesturesLabView()
                 case .settingsStrava:
                     StravaSettingsView()
                 case .settingsPrivacyData:

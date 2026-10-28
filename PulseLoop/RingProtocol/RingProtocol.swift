@@ -440,23 +440,22 @@ struct RingDecoder {
         return [.commandAck(commandId: 0x38)]
     }
 
-    /// Decode a 0x16 `0xA0` data block: base timestamp at [2..5] (LE u32), then two consecutive
-    /// blocks of six 1-minute HR samples at [8..13] and [14..19]. Each block is averaged into one
-    /// reading, the second timestamped 60s after the first. Mirrors the Android multi-packet routing.
+    /// Spacing of the 12 samples in a 0x16 `0xA0` block. Captures (26 Oct) show each measurement as a
+    /// burst whose second block is stamped +120 s, so 12 samples span 2 minutes: ~10 s apart.
+    static let historyHeartRateSampleSeconds: TimeInterval = 10
+
+    /// Decode a 0x16 `0xA0` data block: block start at [2..5] (LE u32), seq at [6], then 12 HR samples
+    /// at [8..19] (verified on hardware). Every non-zero sample is kept, at start + 10 s × index, so the
+    /// slots get the real min/max of each measurement burst instead of two averages. Timestamps are
+    /// deterministic, so a re-sync updates the same rows (history dedupe is by kind + timestamp).
     private func decodeHistoryHeartRate(_ bytes: [UInt8]) -> [RingDecodedEvent] {
+        guard bytes.count >= 20 else { return [.commandAck(commandId: 0x16)] }
         let base = ringDate(u32le(bytes, 2))
-        func average(_ slice: ArraySlice<UInt8>) -> Int? {
-            let valid = slice.map { Int($0) }.filter { $0 > 0 }
-            guard !valid.isEmpty else { return nil }
-            return Int((Double(valid.reduce(0, +)) / Double(valid.count)).rounded())
-        }
         var events: [RingDecodedEvent] = []
-        if let avg = average(bytes[8..<14]) {
-            events.append(.historyMeasurement(kind: .heartRate, value: Double(avg), timestamp: base))
-        }
-        if let avg = average(bytes[14..<20]) {
-            events.append(.historyMeasurement(kind: .heartRate, value: Double(avg),
-                                               timestamp: base.addingTimeInterval(60)))
+        for i in 0..<12 where bytes[8 + i] > 0 {
+            events.append(.historyMeasurement(
+                kind: .heartRate, value: Double(bytes[8 + i]),
+                timestamp: base.addingTimeInterval(Double(i) * Self.historyHeartRateSampleSeconds)))
         }
         return events.isEmpty ? [.commandAck(commandId: 0x16)] : events
     }

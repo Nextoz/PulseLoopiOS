@@ -129,6 +129,7 @@ struct PulseLoopApp: App {
         anomalyMonitor.start()
         batteryAlertMonitor.start()
         healthAlertMonitor.start()
+        UnknownFrameLog.shared.start()
         diagnostics.start()
         widgetPublisher.start()
         healthSyncPublisher.start()

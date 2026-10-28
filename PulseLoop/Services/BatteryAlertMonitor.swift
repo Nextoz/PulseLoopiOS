@@ -7,8 +7,8 @@ import UserNotifications
 /// alert isn't repeated on the next battery sample of the same day.
 struct BatteryAlertState: Codable, Equatable {
     var dateKey: String = ""
-    var firedLow = false        // below-20 fired today
-    var firedCritical = false   // below-10 fired today
+    var firedLow = false        // at-or-below-20 fired today
+    var firedCritical = false   // at-or-below-10 fired today
 }
 
 enum BatteryAlertKind: Equatable {
@@ -35,12 +35,12 @@ enum BatteryAlertEngine {
         if s.dateKey != dateKey { s = BatteryAlertState(dateKey: dateKey) }
         if percent >= lowRearm { s.firedLow = false }
         if percent >= criticalRearm { s.firedCritical = false }
-        if percent < criticalThreshold, !s.firedCritical {
+        if percent <= criticalThreshold, !s.firedCritical {
             s.firedCritical = true
             s.firedLow = true                     // most severe only: 25 -> 8 fires just the critical alert
             return (.critical(percent: percent), s)
         }
-        if percent < lowThreshold, !s.firedLow {
+        if percent <= lowThreshold, !s.firedLow {
             s.firedLow = true
             return (.low(percent: percent), s)
         }
@@ -65,7 +65,7 @@ enum BatteryAlertEngine {
 // MARK: - Monitor
 
 /// Subscribes to `PulseEventBus` and fires a local notification when the ring's battery crosses the
-/// low (<20%) / critical (<10%) thresholds. Pure engine + level-latched state persisted in
+/// low (≤20%) / critical (≤10%) thresholds. Pure engine + level-latched state persisted in
 /// UserDefaults, so a single crossing fires once per day per threshold. Lives for the app lifetime,
 /// like `CoachAnomalyMonitor`; started from `PulseLoopApp`.
 @MainActor

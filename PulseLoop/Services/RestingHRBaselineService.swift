@@ -15,8 +15,9 @@ enum RestingHRBaselineService {
     /// enough samples before we trust a personal baseline.
     static let minSamples = 20
     static let minSpanDays = 7.0
-    /// 30 days of continuous ring sampling is a few thousand rows; cap the fetch defensively.
-    static let fetchLimit = 5000
+    /// jring keeps every 10-second sample of each HR burst (~600 rows a day), so 30 days is ~18k rows;
+    /// cap the fetch defensively above that.
+    static let fetchLimit = 20_000
 
     /// Recompute the learned resting HR if the last refresh is stale. Bumps `profile.updatedAt`
     /// only when the rounded value actually changes, so the `VitalsStore` signature invalidates

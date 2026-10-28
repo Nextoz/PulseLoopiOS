@@ -325,22 +325,25 @@ final class RingDecoderTests: XCTestCase {
         XCTAssertEqual(commandId, 0x16)
     }
 
-    /// 0x16 data block (sub-type 0xA0): base ts at [2..5], then two 6-sample HR blocks → two averages
-    /// 60s apart. Here both blocks are all 60 → averages 60, second timestamped +60s.
-    func testHistoryHeartRateAveraging() {
+    /// 0x16 data block (sub-type 0xA0): base ts at [2..5], then 12 HR samples at [8..19], every one
+    /// kept 10 s apart; a 0 (no reading) is skipped. Synthetic values.
+    func testHistoryHeartRateKeepsEverySample() {
         let base: UInt32 = 1_700_000_000
         var bytes = [UInt8](repeating: 0, count: 20)
         bytes[0] = 0x16; bytes[1] = 0xa0
         bytes[2] = UInt8(base & 0xff); bytes[3] = UInt8((base >> 8) & 0xff)
         bytes[4] = UInt8((base >> 16) & 0xff); bytes[5] = UInt8((base >> 24) & 0xff)
-        for i in 8..<20 { bytes[i] = 60 }
+        for i in 0..<12 { bytes[8 + i] = UInt8(60 + i) }
+        bytes[8 + 5] = 0
         let events = decoder.decodeAll(Data(bytes))
         let hr = events.compactMap { e -> (Double, Date)? in
             if case let .historyMeasurement(kind, value, ts) = e, kind == .heartRate { return (value, ts) } else { return nil }
         }
-        XCTAssertEqual(hr.count, 2)
-        XCTAssertEqual(hr[0].0, 60)
-        XCTAssertEqual(hr[1].0, 60)
-        XCTAssertEqual(hr[1].1.timeIntervalSince1970 - hr[0].1.timeIntervalSince1970, 60, accuracy: 0.5)
+        XCTAssertEqual(hr.count, 11)
+        XCTAssertEqual(hr.first?.0, 60)
+        XCTAssertEqual(hr.last?.0, 71)
+        XCTAssertFalse(hr.contains { $0.0 == 65 })
+        XCTAssertEqual(hr[1].1.timeIntervalSince(hr[0].1), 10, accuracy: 0.5)
+        XCTAssertEqual(hr.last!.1.timeIntervalSince(hr[0].1), 110, accuracy: 0.5)
     }
 }

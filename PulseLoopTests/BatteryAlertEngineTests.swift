@@ -85,10 +85,10 @@ final class BatteryAlertEngineTests: XCTestCase {
     }
 
     func testThresholdBoundaries() {
-        // Each from a fresh state: only strictly-below fires, and 10 is below-20 (low) not below-10.
-        XCTAssertNil(run([20]).alerts[0])                       // 20: not below 20
-        XCTAssertEqual(run([19]).alerts[0], .low(percent: 19))  // 19: below 20
-        XCTAssertEqual(run([10]).alerts[0], .low(percent: 10))  // 10: below 20, not below 10
-        XCTAssertEqual(run([9]).alerts[0], .critical(percent: 9))
+        // Each from a fresh state: "at 20%" fires low, "at 10%" fires critical.
+        XCTAssertNil(run([21]).alerts[0])                         // 21: above 20
+        XCTAssertEqual(run([20]).alerts[0], .low(percent: 20))    // 20: at the low threshold
+        XCTAssertEqual(run([11]).alerts[0], .low(percent: 11))    // 11: low, not critical
+        XCTAssertEqual(run([10]).alerts[0], .critical(percent: 10))
     }
 }

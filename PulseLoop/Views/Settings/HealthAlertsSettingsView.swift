@@ -4,6 +4,8 @@ import SwiftUI
 /// after a ring sync. Each rule is a toggle plus its limit. No AI and nothing leaves the phone.
 struct HealthAlertsSettingsView: View {
     @State private var store = HealthAlertPrefsStore.shared
+    /// Mirrors `BatteryAlertMonitor.enabledKey` (absent = on); seeded in `onAppear`.
+    @State private var batteryAlertsEnabled = true
 
     private var on: Bool { store.prefs.enabled }
 
@@ -64,12 +66,31 @@ struct HealthAlertsSettingsView: View {
                 }
                 .disabled(!on)
                 .opacity(on ? 1 : 0.5)
+
+                // Independent of the master switch above: the battery alert is its own monitor.
+                SettingsGroup(
+                    header: "Ring battery",
+                    footer: "A notification when the ring reports 20% and again at 10%. The ring reports its "
+                        + "battery when it connects, so it can arrive a little after it gets there."
+                ) {
+                    FormToggleRow(title: "Charge reminder", isOn: Binding(
+                        get: { batteryAlertsEnabled },
+                        set: { value in
+                            batteryAlertsEnabled = value
+                            UserDefaults.standard.set(value, forKey: BatteryAlertMonitor.enabledKey)
+                            if value { Task { await HealthAlertMonitor.requestPermissionIfNeeded() } }
+                        }
+                    ))
+                }
             }
             .padding()
         }
         .background(PulseColors.background)
         .pageChrome("Health Alerts")
-        .task { if on { await HealthAlertMonitor.requestPermissionIfNeeded() } }
+        .onAppear {
+            batteryAlertsEnabled = UserDefaults.standard.object(forKey: BatteryAlertMonitor.enabledKey) as? Bool ?? true
+        }
+        .task { if on || batteryAlertsEnabled { await HealthAlertMonitor.requestPermissionIfNeeded() } }
     }
 
     private func toggle(_ keyPath: WritableKeyPath<HealthAlertPrefs, Bool>) -> Binding<Bool> {
