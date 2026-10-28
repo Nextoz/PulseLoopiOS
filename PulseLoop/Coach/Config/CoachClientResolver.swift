@@ -18,6 +18,8 @@ enum CoachClientResolver {
         // Defaulted so the four existing call sites don't each have to learn about a provider
         // whose key is optional anyway.
         localKeyStore: APIKeyStore = LocalLLMKeychainStore(),
+        // Defaulted for the same reason: no existing call site has to change.
+        anthropicKeyStore: APIKeyStore = AnthropicKeychainStore(),
         openAIClientFactory: (String) -> ResponsesClient = { OpenAIResponsesClient(apiKey: $0) }
     ) -> (key: String?, client: ResponsesClient) {
         switch settings.providerMode {
@@ -35,6 +37,7 @@ enum CoachClientResolver {
                 openAIKeyStore: openAIKeyStore, geminiKeyStore: geminiKeyStore,
                 openRouterKeyStore: openRouterKeyStore, minimaxKeyStore: minimaxKeyStore,
                 localKeyStore: localKeyStore,
+                anthropicKeyStore: anthropicKeyStore,
                 openAIClientFactory: openAIClientFactory
             )
         }
@@ -51,6 +54,7 @@ enum CoachClientResolver {
         openRouterKeyStore: APIKeyStore,
         minimaxKeyStore: APIKeyStore,
         localKeyStore: APIKeyStore,
+        anthropicKeyStore: APIKeyStore,
         openAIClientFactory: (String) -> ResponsesClient
     ) -> (key: String?, client: ResponsesClient) {
         switch mode {
@@ -67,6 +71,9 @@ enum CoachClientResolver {
         case .userMiniMaxKey:
             let key = (try? minimaxKeyStore.readKey()) ?? nil
             return (key, MiniMaxClient(apiKey: key ?? "", model: settings.minimaxModel))
+        case .userAnthropicKey:
+            let key = (try? anthropicKeyStore.readKey()) ?? nil
+            return (key, AnthropicClient(apiKey: key ?? "", model: settings.anthropicModel))
         case .localOpenAICompat:
             // Readiness is a base URL that would actually work — `validate`, not "non-empty".
             // Settings persists the field as the user types, so a non-empty check would flip the

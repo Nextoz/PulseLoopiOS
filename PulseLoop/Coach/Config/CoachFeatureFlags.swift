@@ -28,7 +28,7 @@ struct CoachFeatureFlags {
             // device. Otherwise the coach degrades to scripted and on-device
             // failures surface as an error in chat.
             return AppleOnDeviceAvailability.current.isAvailable
-        case .userOpenAIKey, .userGeminiKey, .userOpenRouterKey, .userMiniMaxKey:
+        case .userOpenAIKey, .userGeminiKey, .userOpenRouterKey, .userMiniMaxKey, .userAnthropicKey:
             return hasAPIKey
         case .localOpenAICompat:
             // `hasAPIKey` carries the local provider's readiness sentinel, which is a *usable base
@@ -64,6 +64,7 @@ struct CoachFeatureFlags {
         case .offlineStub: return "offline-stub"
         case .userOpenRouterKey: return settings.openRouterModel
         case .userMiniMaxKey: return settings.minimaxModel
+        case .userAnthropicKey: return settings.anthropicModel
         // Blank is legitimate: llama.cpp ignores the field unless started with --alias. Label it
         // rather than leave the usage row empty.
         case .localOpenAICompat:
@@ -88,6 +89,8 @@ struct CoachFeatureFlags {
             return hasAPIKey ? "Ready · \(settings.openRouterModel)" : "Add an OpenRouter key to enable."
         case .userMiniMaxKey:
             return hasAPIKey ? "Ready · \(settings.minimaxModel)" : "Add a MiniMax key to enable."
+        case .userAnthropicKey:
+            return hasAPIKey ? "Ready · \(settings.anthropicModel)" : "Add an Anthropic API key to enable."
         case .localOpenAICompat:
             guard hasAPIKey else { return "Add your server's address to enable." }
             let model = settings.resolvedLocalModel

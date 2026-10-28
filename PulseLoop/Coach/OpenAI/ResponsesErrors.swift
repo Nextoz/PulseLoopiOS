@@ -8,6 +8,9 @@ enum ResponsesError: Error, LocalizedError {
     case http(status: Int, body: String)
     case decoding(String)
     case emptyOutput
+    /// The model (or a provider safety classifier) declined the request — Claude's
+    /// `stop_reason: "refusal"`. Carries a user-facing reason.
+    case refusal(String)
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +19,7 @@ enum ResponsesError: Error, LocalizedError {
         case .http(let status, let body): return "OpenAI returned HTTP \(status): \(body.prefix(200))"
         case .decoding(let msg): return "Could not parse OpenAI response: \(msg)"
         case .emptyOutput: return "OpenAI returned no output."
+        case .refusal(let reason): return reason
         }
     }
 }

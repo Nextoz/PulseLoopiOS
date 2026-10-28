@@ -35,6 +35,8 @@ struct SettingsView: View {
             return OpenRouterModel(rawValue: settings.model)?.label ?? settings.openRouterModel
         case .userMiniMaxKey:
             return MiniMaxModel(rawValue: settings.model)?.label ?? settings.minimaxModel
+        case .userAnthropicKey:
+            return AnthropicModel(rawValue: settings.model)?.label ?? settings.anthropicModel
         case .localOpenAICompat:
             // The model name is whatever the user's own server calls it, so there's no preset to
             // map. Blank is legitimate (llama.cpp ignores the field), hence the fallback.

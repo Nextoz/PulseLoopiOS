@@ -45,6 +45,8 @@ struct CoachTurnError: Equatable, Codable {
                 self.init(code: "Response error", reason: msg)
             case .emptyOutput:
                 self.init(code: "No output", reason: "The model returned an empty response. Try again, or pick a different model.")
+            case .refusal(let reason):
+                self.init(code: "Declined", reason: reason)
             }
         } else {
             self.init(code: "Error", reason: error.localizedDescription)

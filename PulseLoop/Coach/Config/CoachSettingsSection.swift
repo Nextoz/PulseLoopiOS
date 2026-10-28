@@ -27,8 +27,9 @@ struct CoachSettingsSection: View {
     private let openRouterKeyStore = OpenRouterKeychainStore()
     private let minimaxKeyStore = MiniMaxKeychainStore()
     private let localKeyStore = LocalLLMKeychainStore()
+    private let anthropicKeyStore = AnthropicKeychainStore()
 
-    /// Picker tag that selects the free-text "Custom" OpenRouter model entry.
+    /// Picker tag that selects the free-text "Custom" OpenRouter / Claude model entry.
     private let customModelTag = "__custom__"
 
     /// Display label for the currently selected model, mirroring the Model picker's
@@ -42,6 +43,8 @@ struct CoachSettingsSection: View {
             return selected == customModelTag ? "Custom…" : (OpenRouterModel(rawValue: selected)?.label ?? selected)
         case .userMiniMaxKey:
             return MiniMaxModel(rawValue: selected)?.label ?? selected
+        case .userAnthropicKey:
+            return selected == customModelTag ? "Custom…" : (AnthropicModel(rawValue: selected)?.label ?? selected)
         case .localOpenAICompat:
             return store.settings.resolvedLocalModel.isEmpty ? "Not set" : store.settings.resolvedLocalModel
         default:
@@ -73,6 +76,12 @@ struct CoachSettingsSection: View {
     @State private var showMiniMaxKey: Bool = false
     @State private var minimaxKeyError: String?
 
+    // Anthropic (Claude) key state
+    @State private var anthropicKeyDraft: String = ""
+    @State private var hasAnthropicKey: Bool = false
+    @State private var showAnthropicKey: Bool = false
+    @State private var anthropicKeyError: String?
+
     // Local / self-hosted state. The key is optional here, so it has the same shape as the others
     // but never gates anything.
     @State private var localKeyDraft: String = ""
@@ -86,6 +95,7 @@ struct CoachSettingsSection: View {
         case .userGeminiKey: hasKey = hasGeminiKey
         case .userOpenRouterKey: hasKey = hasOpenRouterKey
         case .userMiniMaxKey: hasKey = hasMiniMaxKey
+        case .userAnthropicKey: hasKey = hasAnthropicKey
         // The local provider's key is optional; a usable base URL is what makes it ready. Mirrors
         // the readiness sentinel in `CoachClientResolver`, which is what actually gates a turn.
         case .localOpenAICompat: hasKey = LocalEndpoint.validate(store.settings.localBaseURL) == nil
@@ -98,6 +108,21 @@ struct CoachSettingsSection: View {
     /// (i.e. the user is using the free-text "Custom" slug).
     private var isCustomOpenRouterModel: Bool {
         !OpenRouterModel.allCases.contains { $0.rawValue == store.settings.model }
+    }
+
+    /// True when the stored Claude model isn't one of the presets (the "Custom" id).
+    private var isCustomAnthropicModel: Bool {
+        !AnthropicModel.allCases.contains { $0.rawValue == store.settings.model }
+    }
+
+    /// Whether the active provider's Model picker currently shows "Custom…". Only
+    /// OpenRouter and Claude offer a Custom entry.
+    private var isCustomModel: Bool {
+        switch store.settings.providerMode {
+        case .userOpenRouterKey: return isCustomOpenRouterModel
+        case .userAnthropicKey: return isCustomAnthropicModel
+        default: return false
+        }
     }
 
     /// Whether to offer the image-input (multimodal) toggle. Hidden on-device (no
@@ -175,6 +200,11 @@ struct CoachSettingsSection: View {
                                 ForEach(MiniMaxModel.allCases) { model in
                                     Text(model.label).tag(model.rawValue)
                                 }
+                            case .userAnthropicKey:
+                                ForEach(AnthropicModel.allCases) { model in
+                                    Text(model.label).tag(model.rawValue)
+                                }
+                                Text("Custom…").tag(customModelTag)
                             default:
                                 ForEach(CoachModel.allCases) { model in
                                     Text(model.label).tag(model.rawValue)
@@ -185,7 +215,14 @@ struct CoachSettingsSection: View {
                 }
 
                 if store.settings.providerMode == .userOpenRouterKey, isCustomOpenRouterModel {
-                    customModelField
+                    customModelField(
+                        placeholder: "vendor/model-slug",
+                        hint: "Any model slug from openrouter.ai/models — e.g. anthropic/claude-sonnet-5.5.")
+                }
+                if store.settings.providerMode == .userAnthropicKey, isCustomAnthropicModel {
+                    customModelField(
+                        placeholder: "claude-model-id",
+                        hint: "Any Claude model id from Anthropic's models list — e.g. claude-opus-5.")
                 }
 
                 // Reasoning effort / Gemini thinking level. The levels differ per model
@@ -251,6 +288,18 @@ struct CoachSettingsSection: View {
                     onSave: saveMiniMaxKey,
                     onRemove: removeMiniMaxKey
                 )
+            } else if effectiveKeyProvider == .userAnthropicKey {
+                apiKeyField(
+                    placeholder: "sk-ant-…",
+                    hint: "Stored only in your device Keychain. Used to call Anthropic directly. "
+                        + "Needs API credits from console.anthropic.com (a Claude Pro/Max subscription is separate).",
+                    draft: $anthropicKeyDraft,
+                    showRaw: $showAnthropicKey,
+                    hasSaved: hasAnthropicKey,
+                    error: anthropicKeyError,
+                    onSave: saveAnthropicKey,
+                    onRemove: removeAnthropicKey
+                )
             }
 
             if store.settings.providerMode == .localOpenAICompat {
@@ -295,6 +344,8 @@ struct CoachSettingsSection: View {
                 // for providers that can actually search.
                 if store.settings.providerMode != .appleOnDevice,
                    store.settings.providerMode != .userMiniMaxKey,
+                   // `AnthropicClient` doesn't map OpenAI's hosted web search to Claude's.
+                   store.settings.providerMode != .userAnthropicKey,
                    // No local engine hosts a web-search tool; `LocalOpenAICompatClient` drops the
                    // spec defensively, and offering the switch would only promise something the
                    // server can't do.
@@ -458,10 +509,10 @@ struct CoachSettingsSection: View {
         }
     }
 
-    private var customModelField: some View {
+    private func customModelField(placeholder: String, hint: String) -> some View {
         FormField {
             VStack(alignment: .leading, spacing: 8) {
-                TextField("vendor/model-slug", text: modelBinding)
+                TextField(placeholder, text: modelBinding)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(PulseFont.subheadline.weight(.regular).monospaced())
@@ -469,7 +520,7 @@ struct CoachSettingsSection: View {
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .pulseGlass(Capsule())
 
-                Text("Any model slug from openrouter.ai/models — e.g. anthropic/claude-sonnet-5.5.")
+                Text(hint)
                     .font(.caption).foregroundStyle(PulseColors.textMuted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -522,6 +573,10 @@ struct CoachSettingsSection: View {
                     // MiniMax has no web search; clear any leftover-on state so the
                     // (now hidden) toggle can't linger enabled.
                     store.settings.enableWebSearch = false
+                case .userAnthropicKey:
+                    store.settings.model = AnthropicModel.default.rawValue
+                    // No web search on the direct Claude client either; same cleanup.
+                    store.settings.enableWebSearch = false
                 default:
                     store.settings.model = CoachModel.default.rawValue
                 }
@@ -533,14 +588,15 @@ struct CoachSettingsSection: View {
         Binding(get: { store.settings.model }, set: { store.settings.model = $0 })
     }
 
-    /// Picker selection that understands the OpenRouter "Custom…" sentinel: when
-    /// the stored model isn't a preset it reports `customModelTag` (so the menu
+    /// Picker selection that understands the OpenRouter / Claude "Custom…" sentinel:
+    /// when the stored model isn't a preset it reports `customModelTag` (so the menu
     /// highlights "Custom…" and the free-text field shows the actual slug).
     private var modelPickerBinding: Binding<String> {
         Binding(
             get: {
-                if store.settings.providerMode == .userOpenRouterKey {
-                    return isCustomOpenRouterModel ? customModelTag : store.settings.model
+                if store.settings.providerMode == .userOpenRouterKey
+                    || store.settings.providerMode == .userAnthropicKey {
+                    return isCustomModel ? customModelTag : store.settings.model
                 }
                 return store.settings.model
             },
@@ -548,7 +604,7 @@ struct CoachSettingsSection: View {
                 if newValue == customModelTag {
                     // Switching into Custom: clear the slug only when leaving a preset
                     // so an existing custom value is preserved.
-                    if !isCustomOpenRouterModel { store.settings.model = "" }
+                    if !isCustomModel { store.settings.model = "" }
                 } else {
                     store.settings.model = newValue
                 }
@@ -610,6 +666,7 @@ struct CoachSettingsSection: View {
         hasOpenRouterKey = ((try? openRouterKeyStore.readKey()) ?? nil) != nil
         hasMiniMaxKey = ((try? minimaxKeyStore.readKey()) ?? nil) != nil
         hasLocalKey = ((try? localKeyStore.readKey()) ?? nil) != nil
+        hasAnthropicKey = ((try? anthropicKeyStore.readKey()) ?? nil) != nil
     }
 
     private func saveOpenAIKey() {
@@ -701,6 +758,29 @@ struct CoachSettingsSection: View {
             refreshKeyState()
         } catch {
             minimaxKeyError = error.localizedDescription
+        }
+    }
+
+    private func saveAnthropicKey() {
+        anthropicKeyError = nil
+        do {
+            try anthropicKeyStore.saveKey(anthropicKeyDraft)
+            anthropicKeyDraft = ""
+            showAnthropicKey = false
+            refreshKeyState()
+        } catch {
+            anthropicKeyError = error.localizedDescription
+        }
+    }
+
+    private func removeAnthropicKey() {
+        anthropicKeyError = nil
+        do {
+            try anthropicKeyStore.deleteKey()
+            anthropicKeyDraft = ""
+            refreshKeyState()
+        } catch {
+            anthropicKeyError = error.localizedDescription
         }
     }
 }

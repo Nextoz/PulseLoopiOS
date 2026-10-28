@@ -14,6 +14,9 @@ enum CoachProviderMode: String, Codable, CaseIterable, Identifiable {
     /// vLLM, SGLang, LM Studio. Declared after the keyed providers so inserting it doesn't disturb
     /// anyone's stored `rawValue`.
     case localOpenAICompat
+    /// Claude through Anthropic's native Messages API with the user's own key. New case;
+    /// the String raw value is the case name, so where it sits doesn't touch any stored value.
+    case userAnthropicKey
     case backendProxy
 
     var id: String { rawValue }
@@ -27,6 +30,7 @@ enum CoachProviderMode: String, Codable, CaseIterable, Identifiable {
         case .userOpenRouterKey: return "OpenRouter"
         case .userMiniMaxKey: return "MiniMax"
         case .localOpenAICompat: return "Local / self-hosted"
+        case .userAnthropicKey: return "Claude (Anthropic)"
         case .backendProxy: return "Backend proxy"
         }
     }
@@ -120,6 +124,37 @@ enum MiniMaxModel: String, CaseIterable, Identifiable {
     /// Sensible default when switching to MiniMax — the latest agentic model, best
     /// suited to the coach's multi-round tool loop.
     static let `default` = MiniMaxModel.m3
+}
+
+/// Preset Claude models for the direct Anthropic provider (`AnthropicClient`). Exact
+/// Messages-API ids with no date suffix. The stored `CoachSettings.model` stays a free
+/// string and Settings also offers a "Custom…" field for any other Claude model id.
+enum AnthropicModel: String, CaseIterable, Identifiable {
+    case opus55   = "claude-opus-5-5"
+    case sonnet55 = "claude-sonnet-5-5"
+    case haiku55  = "claude-haiku-5-5"
+
+    var id: String { rawValue }
+
+    var label: String { rawValue }
+
+    var blurb: String {
+        switch self {
+        case .opus55:   return "Most capable Claude (default)"
+        case .sonnet55: return "Balanced speed & cost"
+        case .haiku55:  return "Fastest, lowest-cost Claude"
+        }
+    }
+
+    /// All three accept `output_config.effort` `low` through `max`. "Default" in the
+    /// picker sends `AnthropicClient.defaultEffort` (`low`).
+    var reasoningEfforts: [ReasoningEffort] { ReasoningEffort.lowToMax }
+
+    /// Server-side refusal fallback (`fallbacks: "default"`) exists for Opus and Sonnet
+    /// 5.5. Haiku 5.5 has none, so its requests never carry the parameter.
+    var supportsServerFallback: Bool { self != .haiku55 }
+
+    static let `default` = AnthropicModel.opus55
 }
 
 /// Preset Gemini model choices surfaced in Settings. `gemini-2.0-flash` was shut
@@ -321,12 +356,20 @@ struct CoachSettings: Codable, Equatable {
         return trimmed.isEmpty ? MiniMaxModel.default.rawValue : trimmed
     }
 
+    /// The Claude model id to use. Free-form (Custom); falls back to the default only
+    /// when the stored `model` is blank.
+    var anthropicModel: String {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AnthropicModel.default.rawValue : trimmed
+    }
+
     /// The effort levels the selected preset accepts; `nil` when unknown (a Custom
     /// slug, a non-preset stored model) or when the provider takes no effort hint.
     var knownReasoningEfforts: [ReasoningEffort]? {
         switch providerMode {
         case .userOpenAIKey: return CoachModel(rawValue: model)?.reasoningEfforts
         case .userOpenRouterKey: return OpenRouterModel(rawValue: model)?.reasoningEfforts
+        case .userAnthropicKey: return AnthropicModel(rawValue: model)?.reasoningEfforts
         // A non-preset Gemini model may be a 2.5 model, which rejects `thinkingLevel`.
         case .userGeminiKey: return GeminiModel(rawValue: model)?.reasoningEfforts ?? []
         default: return nil
@@ -338,7 +381,7 @@ struct CoachSettings: Codable, Equatable {
     var reasoningEffortOptions: [ReasoningEffort] {
         if let known = knownReasoningEfforts { return known }
         switch providerMode {
-        case .userOpenAIKey, .userOpenRouterKey: return ReasoningEffort.common
+        case .userOpenAIKey, .userOpenRouterKey, .userAnthropicKey: return ReasoningEffort.common
         default: return []
         }
     }

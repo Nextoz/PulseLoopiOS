@@ -606,6 +606,7 @@ final class ReasoningEffortTests: XCTestCase {
     func testEveryPresetIsPriced() {
         let presets = CoachModel.allCases.map(\.rawValue) + GeminiModel.allCases.map(\.rawValue)
             + OpenRouterModel.allCases.map(\.rawValue) + MiniMaxModel.allCases.map(\.rawValue)
+            + AnthropicModel.allCases.map(\.rawValue)
         for model in presets {
             XCTAssertNotNil(CoachPricingCatalog.price(for: model), "\(model) has no price")
         }
