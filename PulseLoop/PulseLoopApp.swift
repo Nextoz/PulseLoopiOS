@@ -25,6 +25,8 @@ struct PulseLoopApp: App {
     private let anomalyMonitor: CoachAnomalyMonitor
     /// Retained so it keeps watching the ring's battery for low/critical alerts.
     private let batteryAlertMonitor = BatteryAlertMonitor()
+    /// Retained so it keeps checking each completed sync against the owner's health alert rules.
+    private let healthAlertMonitor: HealthAlertMonitor
     /// Retained so it keeps recording the structured wearable diagnostics timeline.
     private let diagnostics: DiagnosticsSubscriber
     /// Retained so it keeps projecting synced data into the home-screen-widget snapshot.
@@ -93,6 +95,7 @@ struct PulseLoopApp: App {
         self.persistence = subscriber
         self.summaryCoordinator = CoachSummaryCoordinator(context: container.mainContext)
         self.anomalyMonitor = CoachAnomalyMonitor(context: container.mainContext)
+        self.healthAlertMonitor = HealthAlertMonitor(context: container.mainContext)
         let diagnostics = DiagnosticsSubscriber(context: container.mainContext)
         self.diagnostics = diagnostics
         let widgetPublisher = WidgetSnapshotPublisher(context: container.mainContext)
@@ -125,6 +128,7 @@ struct PulseLoopApp: App {
         summaryCoordinator.start()
         anomalyMonitor.start()
         batteryAlertMonitor.start()
+        healthAlertMonitor.start()
         diagnostics.start()
         widgetPublisher.start()
         healthSyncPublisher.start()

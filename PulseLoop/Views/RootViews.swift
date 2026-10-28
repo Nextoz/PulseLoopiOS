@@ -174,6 +174,8 @@ struct RootAppView: View {
                     CalibrationSettingsView()
                 case .settingsHealth:
                     AppleHealthSettingsView()
+                case .settingsHealthAlerts:
+                    HealthAlertsSettingsView()
                 case .settingsStrava:
                     StravaSettingsView()
                 case .settingsPrivacyData:

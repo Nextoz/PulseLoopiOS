@@ -185,8 +185,10 @@ enum RingSlotsExport {
 
     // MARK: - Store reader
 
+    /// Every stored ring sample from the last `days` days as 15-minute slots (also read by the
+    /// on-device health alerts, so alerts and Vault Companion see the same numbers).
     @MainActor
-    static func export(days: Int, context: ModelContext, now: Date = Date(), timeZone: TimeZone = .current) -> String {
+    static func slots(days: Int, context: ModelContext, now: Date = Date()) -> [Slot] {
         let days = min(28, max(1, days))
         let from = now.addingTimeInterval(-Double(days) * 86_400 - 86_400)
         let mockRaw = MeasurementSource.mock.rawValue
@@ -197,9 +199,8 @@ enum RingSlotsExport {
             predicate: #Predicate { $0.timestamp >= from && $0.sourceRaw != mockRaw }))) ?? []
         let blocks = (try? context.fetch(FetchDescriptor<SleepStageBlock>(
             predicate: #Predicate { $0.startAt >= from }))) ?? []
-        let device = DeviceRepository.current(context: context)
 
-        let slots = buildSlots(
+        return buildSlots(
             steps: buckets.map { StepBucket(start: $0.timestamp, steps: $0.steps) },
             samples: rows.compactMap { r in
                 MeasurementKind(rawValue: r.kindRaw).map { Sample(kind: $0, value: r.value, timestamp: r.timestamp) }
@@ -208,7 +209,13 @@ enum RingSlotsExport {
                 SleepBlock(start: $0.startAt, minutes: $0.durationMinutes, stage: SleepStage(rawValue: $0.stageRaw) ?? .unknown)
             },
             days: days, now: now)
+    }
+
+    @MainActor
+    static func export(days: Int, context: ModelContext, now: Date = Date(), timeZone: TimeZone = .current) -> String {
+        let built = Self.slots(days: days, context: context, now: now)
+        let device = DeviceRepository.current(context: context)
         let label = deviceLabel(name: device?.advertisedName ?? device?.name, firmware: device?.firmwareVersion)
-        return json(slots: slots, device: label, generatedAt: now, timeZone: timeZone)
+        return json(slots: built, device: label, generatedAt: now, timeZone: timeZone)
     }
 }

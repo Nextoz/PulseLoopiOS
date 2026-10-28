@@ -23,6 +23,7 @@ enum AppRoute: Hashable {
     case settingsToday
     case settingsCalibration
     case settingsHealth
+    case settingsHealthAlerts
     case settingsStrava
     case settingsPrivacyData
     case settingsAbout
